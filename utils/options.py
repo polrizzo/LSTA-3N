@@ -1,15 +1,22 @@
 import argparse
 
-ego_path = "/content/drive/MyDrive/ego_path/train_val/"
-epic_path = "/content/drive/MyDrive/ego_path/features_spaziali/"
-feats_vector_path = "/content/drive/MyDrive/ego_path/prextracted_model_features/"
+### USER MANDATORY VARIABLES ###
+LABELS_PATH = "/content/drive/MyDrive/ego_path/train_val/"
+EXPERIMENTS_PATH = "/content/drive/MyDrive/ego_path/features_spaziali/"
+FEATURES_PATH = "/content/drive/MyDrive/ego_path/prextracted_model_features/"
+###############################
 
-CURRENT_DOMAIN      = "D1"
-TARGET_DOMAIN       = "D3"
-FRAME_AGGREGATION   = "trn-m"
-CURRENT_MODALITY    = "RGB"
-USE_TARGET          = "uSv"
-CURRENT_ARCH        = "TSM"
+CURRENT_DOMAIN = "D1"
+TARGET_DOMAIN = "D3"
+FRAME_AGGREGATION = "trn-m"
+CURRENT_MODALITY = "RGB"
+USE_TARGET = "uSv"
+CURRENT_ARCH = "TSM"
+
+TRAIN_SOURCE_LIST = LABELS_PATH + CURRENT_DOMAIN + "_train.pkl"
+TRAIN_SOURCE_DATA = FEATURES_PATH + CURRENT_MODALITY + "/ek_" + CURRENT_ARCH + "/" + CURRENT_DOMAIN + "-" + CURRENT_DOMAIN + "_train"
+TRAIN_TARGET_LIST = LABELS_PATH + TARGET_DOMAIN + "_train.pkl"
+TRAIN_TARGET_DATA = FEATURES_PATH + CURRENT_MODALITY + "/ek_" + CURRENT_ARCH + "/" + CURRENT_DOMAIN + "-" + TARGET_DOMAIN + "_test"
 
 N_EPOCH = 50
 DROP = 0.8
@@ -23,54 +30,39 @@ LRN_DECAY_WEIGHT = 1e-4
 BETA = [0.75, 0.75, 0.5]
 GAMMA = 0.03
 
-RES = False
+WORKERS = 4
+RESUME_FROM_LAST_CHECKPOINT = False
+USE_SPATIAL_FEATURES = 'Y'
 
 # Used only during DA
 PLACE_ADV = ['N', 'N', 'N']
-# USE_ATTN SHOULD ALWAYS BE NONE, UNLESS DURING THE SECOND RUN WITH Y Y Y
-# THE SECOND RUN OF Y Y Y SHOULD BE DONE WITH USE_ATTN = TRANSATTN
-USE_ATTN = 'none' # ['none', 'TransAttn', 'general', 'DotProduct']
+USE_ATTN = 'none'
 ADV_DA = 'none' if PLACE_ADV == ['N', 'N', 'N'] else 'RevGrad'
 LOSS_ATTN = 'none' if USE_ATTN == 'none' else 'attentive_entropy'
 
-
 # == LSTA CONFIGURATION === #
 USE_LSTA = 'Y'
-USE_SPATIAL_FEATURES = 'Y' if USE_LSTA == 'Y' else 'N'
 LSTA_LEARNING = 0.001
 LSTA_LRN_DECAY = 0.1
-LSTA_LRN_STEP = [100, 100, 100] # look at number of epochs to understand if it'll used or not
+LSTA_LRN_STEP = [100, 100, 100]
 
+'''
+Notice: it's enough to set up the above variables in order to use different configurations.
+        The below parameters depend on the above variables
+'''
+### START SETTING UP PARAMETERS ###
 parser = argparse.ArgumentParser(description="PyTorch implementation of Temporal Segment Networks")
 parser.add_argument('--source_domain', type=str, default=CURRENT_DOMAIN)
 parser.add_argument('--target_domain', type=str, default=TARGET_DOMAIN)
 
 parser.add_argument('--num_class', type=str, default="8,8")
 parser.add_argument('--modality', type=str, default=CURRENT_MODALITY)
-# choices=['Audio', 'RGB', 'Flow', 'RGBDiff', 'RGBDiff2', 'RGBDiffplus', 'ALL'])
-parser.add_argument('--train_source_list', type=str,
-                    default=ego_path + CURRENT_DOMAIN + "_train.pkl")
-parser.add_argument('--train_target_list', type=str,
-                    default=ego_path + TARGET_DOMAIN + "_train.pkl")
-parser.add_argument('--val_list', type=str,
-                    default=ego_path + CURRENT_DOMAIN + "_test.pkl")
-parser.add_argument('--val_data', type=str,
-                    default=ego_path + "prextracted_model_features/" + CURRENT_MODALITY + "/ek_" +
-                            CURRENT_ARCH + "/" + CURRENT_DOMAIN + "-" + TARGET_DOMAIN + "_test")
-parser.add_argument('--train_source_data', type=str,
-                    default=feats_vector_path + CURRENT_MODALITY + "/ek_" +
-                            CURRENT_ARCH + "/" + CURRENT_DOMAIN + "-" + CURRENT_DOMAIN + "_train")
-parser.add_argument('--train_target_data', type=str,
-                    default=feats_vector_path + CURRENT_MODALITY + "/ek_" +
-                            CURRENT_ARCH + "/" + CURRENT_DOMAIN + "-" + TARGET_DOMAIN + "_test")
 
-# === Spatial features (hickle files) === #
-parser.add_argument('--train_source_data_spatial', type=str,
-                    default=epic_path + CURRENT_DOMAIN + "-" + CURRENT_DOMAIN + "_train_"
-                            + CURRENT_MODALITY + '_' + CURRENT_ARCH + "__spatial")
-parser.add_argument('--train_target_data_spatial', type=str,
-                    default=epic_path + CURRENT_DOMAIN + "-" + TARGET_DOMAIN + "_train_"
-                            + CURRENT_MODALITY + '_' + CURRENT_ARCH + "__spatial")
+parser.add_argument('--train_source_list', type=str, default=TRAIN_SOURCE_LIST)
+parser.add_argument('--train_target_list', type=str, default=TRAIN_TARGET_LIST)
+parser.add_argument('--train_source_data', type=str, default=TRAIN_SOURCE_DATA)
+parser.add_argument('--train_target_data', type=str, default=TRAIN_TARGET_DATA)
+
 parser.add_argument('--use_spatial_features', type=str, default=USE_SPATIAL_FEATURES, choices=["N", "Y"])
 
 # ========================= Model Configs ==========================
@@ -124,7 +116,8 @@ parser.add_argument('--use_bn', type=str, default='none', choices=['none', 'AdaB
 parser.add_argument('--ens_DA', type=str, default='none', choices=['none', 'MCD'], help='ensembling-based methods')
 parser.add_argument('--use_attn_frame', type=str, default='none',
                     choices=['none', 'TransAttn', 'general', 'DotProduct'], help='attention-mechanism for frames only')
-parser.add_argument('--use_attn', type=str, default=USE_ATTN, choices=['none', 'TransAttn', 'general', 'DotProduct', 'LSTA'],
+parser.add_argument('--use_attn', type=str, default=USE_ATTN,
+                    choices=['none', 'TransAttn', 'general', 'DotProduct', 'LSTA'],
                     help='attention-mechanism')
 parser.add_argument('--n_attn', type=int, default=1, help='number of discriminators for transferable attention')
 parser.add_argument('--add_loss_DA', type=str, default=LOSS_ATTN,
@@ -154,7 +147,8 @@ parser.add_argument('-b', '--batch_size', default=BATCH, type=int, nargs="+",
                     metavar='N', help='mini-batch size ([source, target, testing])')
 parser.add_argument('--lr', '--learning_rate', default=LEARNING, type=float,
                     metavar='LR', help='initial learning rate')
-parser.add_argument('--lr_decay', default=LRN_DECAY, type=float, metavar='LRDecay', help='decay factor for learning rate')
+parser.add_argument('--lr_decay', default=LRN_DECAY, type=float, metavar='LRDecay',
+                    help='decay factor for learning rate')
 parser.add_argument('--lr_adaptive', type=str, default=LRN_ADPT, choices=['none', 'loss', 'dann'])
 parser.add_argument('--lr_steps', default=LRN_STEP, type=float, nargs="+",
                     metavar='LRSteps', help='epochs to decay learning rate')
@@ -173,7 +167,8 @@ parser.add_argument('--lr_lsta', default=LSTA_LEARNING, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--lr_steps_lsta', default=LSTA_LRN_STEP, type=float, nargs="+",
                     metavar='LRSteps', help='epochs to decay learning rate')
-parser.add_argument('--lr_decay_lsta', default=LSTA_LRN_DECAY, type=float, metavar='LRDecay', help='decay factor for learning rate')
+parser.add_argument('--lr_decay_lsta', default=LSTA_LRN_DECAY, type=float, metavar='LRDecay',
+                    help='decay factor for learning rate')
 
 # ========================= Monitor Configs ==========================
 parser.add_argument('--print_freq', '-pf', default=10, type=int,
@@ -185,15 +180,15 @@ parser.add_argument('--eval_freq', '-ef', default=5, type=int,
 parser.add_argument('--verbose', default=False, action="store_true")
 
 # ========================= Runtime Configs ==========================
-parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
+parser.add_argument('-j', '--workers', default=WORKERS, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('--resume', default=RES, type=str, metavar='PATH',
+parser.add_argument('--resume', default=RESUME_FROM_LAST_CHECKPOINT, type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--resume_hp', default=RES, action="store_true",
+parser.add_argument('--resume_hp', default=RESUME_FROM_LAST_CHECKPOINT, action="store_true",
                     help='whether to use the saved hyper-parameters')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
-parser.add_argument('--exp_path', type=str, default=epic_path + "LSTA_TA3N/action-model/",
+parser.add_argument('--exp_path', type=str, default=EXPERIMENTS_PATH + "LSTA_TA3N/",
                     help='full path of the experiment folder')
 parser.add_argument('--gpus', nargs='+', type=int, default=None)
 parser.add_argument('--flow_prefix', default="", type=str)
