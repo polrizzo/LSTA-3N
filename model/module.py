@@ -308,6 +308,23 @@ class VideoModel(nn.Module):
                                               is_with_ta3n=self.use_lsta)
 
     def forward(self, device, input_source, input_target, beta, mu, is_train, reverse):
+        input_source = input_source.to(device)
+        input_target = input_target.to(device)
+
+        if self.use_lsta:
+            self.lsta_model.optimizer_fn.zero_grad()
+            # Source
+            input_source = input_source.permute(1, 0, 2, 3, 4)
+            output_label_source, source_features_avgpool = self.lsta_model(input_source)
+            input_source = source_features_avgpool
+            # Target
+            input_target = input_target.permute(1, 0, 2, 3, 4)
+            target_stack = []
+            for t in range(input_target.size(0)):
+                target_reshaped = input_target[t, :, :, :, :]
+                target_stack.append(nn.AvgPool2d(7)(target_reshaped).view(target_reshaped.size(0), -1))
+            input_target = torch.stack(target_stack, dim=1)
+
         batch_source = input_source.size()[0]
         batch_target = input_target.size()[0]
         num_segments = self.train_segments if is_train else self.val_segments
