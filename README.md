@@ -4,7 +4,7 @@
 
 The following repository faces a relatively new challenge in the field of computer vision: Domain Adaptation for Egocentric Action Recognition.
 The proposed method focuses only on verb recognition and makes use of two well-known solution in this field: TA<sup>3</sup>N and LSTA.
-This combination has led to a (naive) brand new architecture, called LSTA<sup>3</sup<N.
+This combination has led to a (naive) brand new architecture, called LSTA<sup>3</sup<N, tested on the EPIC-KITCHENS dataset
 
 --------------------------------------------------------------
 
@@ -28,6 +28,8 @@ TA<sup>3</sup>N extends a simple image-based domain adaptation network by adding
 With our method, TA<sup>3</sup>N is fed with attentively weighted feature vectors obtained through LSTA. In this way, not only is attention performed on the spatial dimension as well, but we maintain an internal memory state for it, which implies a smooth track of the attention maps across time.
 
 <p align="center"><img src="model/Architecture.jpg" alt="LSTA3N_Architecture" width="700"/></p>
+  
+The ideas behind the project are inspired by the following papers and the corresponding GitHub repos.
 
 | Paper | Title | Implementation source |
 | ----- | ----- | --------------------- |
