@@ -1,5 +1,3 @@
-from abc import ABC
-
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Function
@@ -301,13 +299,13 @@ class VideoModel(nn.Module):
                 nn.Tanh(),
                 nn.Linear(feat_aggregated_dim, 1)
             )
+        # initilize LSTA
         if self.use_lsta:
             print('Use LSTA with TA3N: {}'.format(self.use_lsta))
             self.lsta_model = attention_model(num_classes=num_class[0], mem_size=self.mem_size,
-                                              c_cam_classes=self.outpool_size,
-                                              is_with_ta3n=self.use_lsta)
+                                              c_cam_classes=self.outpool_size, is_with_ta3n=self.use_lsta)
 
-    def forward(self, device, input_source, input_target, beta, mu, is_train, reverse):
+    def forward(self, device, input_source, input_target, beta, mu, is_train, reverse, use_spatial_features=False):
         input_source = input_source.to(device)
         input_target = input_target.to(device)
 
@@ -317,6 +315,21 @@ class VideoModel(nn.Module):
             input_source = input_source.permute(1, 0, 2, 3, 4)
             output_label_source, source_features_avgpool = self.lsta_model(input_source)
             input_source = source_features_avgpool
+            # Target
+            input_target = input_target.permute(1, 0, 2, 3, 4)
+            target_stack = []
+            for t in range(input_target.size(0)):
+                target_reshaped = input_target[t, :, :, :, :]
+                target_stack.append(nn.AvgPool2d(7)(target_reshaped).view(target_reshaped.size(0), -1))
+            input_target = torch.stack(target_stack, dim=1)
+        elif use_spatial_features:
+            # Source
+            input_source = input_source.permute(1, 0, 2, 3, 4)
+            state_inp_stack = []
+            for t in range(input_source.size(0)):
+                source_reshaped = input_source[t, :, :, :, :]
+                state_inp_stack.append(nn.AvgPool2d(7)(source_reshaped).view(source_reshaped.size(0), -1))
+            source_data = torch.stack(state_inp_stack, dim=1)
             # Target
             input_target = input_target.permute(1, 0, 2, 3, 4)
             target_stack = []
@@ -574,7 +587,7 @@ class TCL(nn.Module):
 
 
 # definition of Gradient Reversal Layer
-class GradReverse(Function, ABC):
+class GradReverse(Function):
     @staticmethod
     def forward(ctx, x, beta):
         ctx.beta = beta
