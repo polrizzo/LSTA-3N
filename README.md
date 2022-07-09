@@ -4,7 +4,7 @@
 
 The current repository faces one of the main challanges in computer vision: action recognition applied to egocentric videos.
 The project proposed focuses only on verb-recognition and makes use of two well-known solution in this field: TA3N and LSTA.
-This combination has led to a (naive) brand new architecture, called LSTA3N.
+This combination has led to a (naive) brand new architecture, called LSTA3N, and it has been experimented on Epic Kitchens dataset.
 
 --------------------------------------------------------------
 
@@ -32,6 +32,8 @@ Hence, we relied on LSTA, a recurrent unit extended from LSTM, which comes with 
 The architecture requires spatial feature tensors as input which are fed through LSTA. 
 LSTA returns attentively-weighted feature vectors, which are then sent to TA3N.
 Putting together LSTA with TA3N implies that attention is carried out on both the spatial and the temporal dimension.
+
+The ideas behind the project are inspired by the following papers and the code from each GitHub repos.
 
 | Paper | Title | Implementation source |
 | ----- | ----- | --------------------- |
