@@ -1,9 +1,9 @@
 import argparse
 
 ### USER MANDATORY VARIABLES ###
-LABELS_PATH = "/content/drive/MyDrive/ego_path/train_val/"
-EXPERIMENTS_PATH = "/content/drive/MyDrive/ego_path/features_spaziali/"
-FEATURES_PATH = "/content/drive/MyDrive/ego_path/prextracted_model_features/"
+LABELS_PATH = "/Users/lorenzo/University/Polito/ML and DL/EGO_Project/train_val" + "/"
+FEATURES_PATH = "/Users/lorenzo/University/Polito/ML and DL/EPIC-KITCHENS-100_UDA_TA3N/spatial_feat" + "/"
+EXPERIMENTS_PATH = "/Users/lorenzo/University/Polito/ML and DL/LSTA-3N" + "/"
 ###############################
 
 CURRENT_DOMAIN = "D1"
@@ -14,11 +14,11 @@ USE_TARGET = "uSv"
 CURRENT_ARCH = "TSM"
 
 TRAIN_SOURCE_LIST = LABELS_PATH + CURRENT_DOMAIN + "_train.pkl"
-TRAIN_SOURCE_DATA = FEATURES_PATH + CURRENT_MODALITY + "/ek_" + CURRENT_ARCH + "/" + CURRENT_DOMAIN + "-" + CURRENT_DOMAIN + "_train"
+TRAIN_SOURCE_DATA = FEATURES_PATH + CURRENT_DOMAIN + "-" + CURRENT_DOMAIN + "_train_" + CURRENT_MODALITY + "_" + CURRENT_ARCH + "__spatial" + ".hkl"
 TRAIN_TARGET_LIST = LABELS_PATH + TARGET_DOMAIN + "_train.pkl"
-TRAIN_TARGET_DATA = FEATURES_PATH + CURRENT_MODALITY + "/ek_" + CURRENT_ARCH + "/" + CURRENT_DOMAIN + "-" + TARGET_DOMAIN + "_test"
+TRAIN_TARGET_DATA = FEATURES_PATH + TARGET_DOMAIN + "-" + TARGET_DOMAIN + "_test_" + CURRENT_MODALITY + "_" + CURRENT_ARCH + "__spatial" + ".hkl"
 
-N_EPOCH = 50
+N_EPOCH = 3
 DROP = 0.8
 LEARNING = 0.05
 BATCH = [32, 28, 64]
@@ -32,6 +32,7 @@ GAMMA = 0.03
 
 WORKERS = 4
 RESUME_FROM_LAST_CHECKPOINT = False
+TENSORBOARD = True
 USE_SPATIAL_FEATURES = 'Y'
 
 # Used only during DA
@@ -40,18 +41,21 @@ USE_ATTN = 'none'
 ADV_DA = 'none' if PLACE_ADV == ['N', 'N', 'N'] else 'RevGrad'
 LOSS_ATTN = 'none' if USE_ATTN == 'none' else 'attentive_entropy'
 
-# == LSTA CONFIGURATION === #
-USE_LSTA = 'Y'
+# LSTA configuration
+USE_LSTA = 'N'
 LSTA_LEARNING = 0.001
 LSTA_LRN_DECAY = 0.1
 LSTA_LRN_STEP = [100, 100, 100]
+
 
 '''
 Notice: it's enough to set up the above variables in order to use different configurations.
         The below parameters depend on the above variables
 '''
+
 ### START SETTING UP PARAMETERS ###
 parser = argparse.ArgumentParser(description="PyTorch implementation of Temporal Segment Networks")
+
 parser.add_argument('--source_domain', type=str, default=CURRENT_DOMAIN)
 parser.add_argument('--target_domain', type=str, default=TARGET_DOMAIN)
 
@@ -92,7 +96,7 @@ parser.add_argument('--loss_type', type=str, default="nll",
                     choices=['nll'])
 parser.add_argument('--weighted_class_loss', type=str, default='N', choices=['Y', 'N'])
 
-# ------ RNN ------
+# ========================= RNN ==========================
 parser.add_argument('--n_rnn', default=1, type=int, metavar='M',
                     help='number of RNN layers (e.g. 0, 1, 2, ...)')
 parser.add_argument('--rnn_cell', type=str, default='LSTM', choices=['LSTM', 'GRU'])
@@ -193,7 +197,4 @@ parser.add_argument('--exp_path', type=str, default=EXPERIMENTS_PATH + "LSTA_TA3
 parser.add_argument('--gpus', nargs='+', type=int, default=None)
 parser.add_argument('--flow_prefix', default="", type=str)
 parser.add_argument('--save_model', default=False, action="store_true")
-parser.add_argument('--save_best_log_val', default="best_val.log", type=str)
-parser.add_argument('--save_best_log_test', default="best_test.log", type=str)
-parser.add_argument('--save_attention', type=int, default=-1)
-parser.add_argument('--tensorboard', default=True, dest='tensorboard', action='store_true')
+parser.add_argument('--tensorboard', default=TENSORBOARD, dest='tensorboard', action='store_true')
