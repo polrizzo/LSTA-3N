@@ -2,9 +2,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-The current repository faces one of the main challanges in computer vision: action recognition applied to egocentric videos.
-The project proposed focuses only on verb-recognition and makes use of two well-known solution in this field: TA3N and LSTA.
-This combination has led to a (naive) brand new architecture, called LSTA3N, and it has been experimented on Epic Kitchens dataset.
+The following repository faces a relatively new challenge in the field of computer vision: Domain Adaptation for Egocentric Action Recognition.
+The proposed method focuses only on verb recognition and makes use of two well-known solution in this field: TA<sup>3</sup>N and LSTA.
+This combination has led to a (naive) brand new architecture, called LSTA<sup>3</sup<N.
 
 --------------------------------------------------------------
 
@@ -22,18 +22,12 @@ This combination has led to a (naive) brand new architecture, called LSTA3N, and
 --------------------------------------------------------------
 
 ## Description
-As starting point, we based our architecture on the current state of art for Egocetric Action Recognition: TA3N. 
-This model is able to focus on regions of interest in order to better discriminate particular actions.
-Despite of its good performances, each frame is considered independently and the attention map is generated frame by frame, causing a loss of information.
-Hence, we relied on LSTA, a recurrent unit extended from LSTM, which comes with built-in attention module and tensor-structured memory.
+Our architecture stems from the current state of the art for Unsupervised Domain Adaptation, namely TA<sup>3</sup>N.
+TA<sup>3</sup>N extends a simple image-based domain adaptation network by adding a temporal module which learns different temporal relations. After that, a domain attention mechanism is applied, so that the network can align more those features which show highest domain discrepancy. In so doing, attention is considered only on the temporal dimension.
+  
+With our method, TA<sup>3</sup>N is fed with attentively weighted feature vectors obtained through LSTA. In this way, not only is attention performed on the spatial dimension as well, but we maintain an internal memory state for it, which implies a smooth track of the attention maps across time.
 
 <p align="center"><img src="model/Architecture.jpg" alt="LSTA3N_Architecture" width="700"/></p>
-
-The architecture requires spatial feature tensors as input which are fed through LSTA. 
-LSTA returns attentively-weighted feature vectors, which are then sent to TA3N.
-Putting together LSTA with TA3N implies that attention is carried out on both the spatial and the temporal dimension.
-
-The ideas behind the project are inspired by the following papers and the code from each GitHub repos.
 
 | Paper | Title | Implementation source |
 | ----- | ----- | --------------------- |
@@ -48,9 +42,10 @@ The ideas behind the project are inspired by the following papers and the code f
 1. The project has been tested on Linux (Ubuntu 18.04), MacOS and Windows (10)
 2. Python 3.6+ version is needed
 3. Good NVIDIA GPU (4GB+) is strongly suggested but it's not mandatory
+4. RAM size depends on the dimension of the spatial feature tensors. In the tested configuration, not less than 32GB were required.
 
 ### Enviroment
-Once cloned the repo, some python libraries are required to setup your (virtual) enviroment properly.
+Once the repo is cloned, some python libraries are required to properly setup your (virtual) enviroment.
 
 
 They can be installed via pip:
@@ -66,9 +61,9 @@ or via conda:
 ### Dataset and Features
 EPIC KITCHENS dataset can be found [here](https://epic-kitchens.github.io/2022). 
 
-However, the dataset is made of RGB and Flow frames while the scripts in this project exploit pre-extracted features; hence, it's essential to extract them from images before running them. Features' shape should be `[Batch, N°Channels, N°Frame, Width, Height]`. We worked with features extracted from RGB frames, so `batch_size = 2048` and `n_channel = 3` .
+Though it is possible to download every single video, this project's scripts are based on pre-extracted spatial features. Features' shape should be `[Batch, N°Channels, N°Frames, Width, Height]`. In our case, the features were extracted from the last convolutional layer block of a TSM applied to RGB frames. Therefore, `batch_size = 2048` and `n_channel = 3` .
 
-Three different domains have been selected to perform domain shift: `P01, P22 and P08`, respectively known in this project as `D1, D2 and D3`.
+Three different domains have been selected to perform domain shift: `P01, P08 and P22`, respectively known in this project as `D1, D2 and D3`.
 
 --------------------------------------------------------------
 
@@ -85,13 +80,12 @@ Three different domains have been selected to perform domain shift: `P01, P22 an
     * `options.py` : configuration list of parameters to build VideoModel
 
 ### Configuration of parameters
-`options.py` needs a briefly configuration in order to build properly VideoModel. Most of parameters have description to help understanding their logic.
-Those which need more attention are:
+`options.py` needs a brief configuration in order to correctly build VideoModel. Description for most parameters is given. Those which need more attention are:
 
 * *dropout_v* : randomly zeroes some of the elements of the input tensor with probability p, preventing the co-adaptation of neurons
 * *dann* : decreses progressively learning rate at each epoch; alternatively, it can be reduced by *lr_decay* every *lr_steps* epoch
-* *place_adv* : losses implemented in TA3N module; these are  video relation-based adversarial loss, video-based adversarial loss, frame-based adversarial loss
-* *use_attn* : attention module implemented
+* *place_adv* : booleans prescribing what losses are meant to be considered in the TA3N module; these are video relation-based adversarial loss, video-based adversarial loss, frame-based adversarial loss
+* *use_attn* : boolean. Whether to apply domain attention or not.
 * *beta* : weights of loss described in *place_adv*
 * *gamma* : weight for the attentive entropy loss
 
