@@ -1,4 +1,4 @@
-# LSTA-3N
+# LSTA<sup>3</sup>N for action recognition
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
