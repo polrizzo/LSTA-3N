@@ -65,7 +65,7 @@ EPIC KITCHENS dataset can be found [here](https://epic-kitchens.github.io/2022).
 
 Though it is possible to download every single video, this project's scripts are based on pre-extracted spatial features. Features' shape should be `[Batch, N°Channels, N°Frames, Width, Height]`. In our case, the features were extracted from the last convolutional layer block of a TSM applied to RGB frames. Therefore, `batch_size = 2048` and `n_channel = 3` .
 
-Three different domains have been selected to perform domain shift: `P01, P08 and P22`, respectively known in this project as `D1, D2 and D3`.
+Three different domains have been selected to perform domain shift: `P01, P22 and P08`, respectively known in this project as `D1, D2 and D3`.
 
 --------------------------------------------------------------
 
