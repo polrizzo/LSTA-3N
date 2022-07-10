@@ -57,6 +57,7 @@ def print_args(args, color):
     print(color.GREEN + 'Target data usage:', args.use_target)
     print(color.GREEN + 'Use spatial features:', args.use_spatial_features)
     print(color.GREEN + 'Number of workers:', args.workers)
+    print(color.GREEN + 'Metric of training:', args.train_metric)
     print(color.GREEN + 'Tensorboard:', args.tensorboard)
     
     if args.use_target == 'none':
