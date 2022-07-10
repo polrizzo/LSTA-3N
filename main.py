@@ -9,6 +9,7 @@ from torch import nn
 from torch.backends import cudnn
 from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
+from torchviz import make_dot
 
 from dataset.tsn import TSNDataSet
 from model.module import VideoModel
@@ -44,7 +45,8 @@ def _initialize_lsta(model):
     model.module.lsta_model.set_optimizer_fn(
         torch.optim.Adam(train_params, lr=args.lr_lsta, weight_decay=5e-4, eps=1e-4))
     model.module.lsta_model.set_optim_scheduler(
-        torch.optim.lr_scheduler.MultiStepLR(model.module.lsta_model.optimizer_fn, milestones=args.lr_steps_lsta, gamma=args.lr_decay_lsta))
+        torch.optim.lr_scheduler.MultiStepLR(model.module.lsta_model.optimizer_fn, milestones=args.lr_steps_lsta,
+                                             gamma=args.lr_decay_lsta))
 
 
 def _adjust_learning_rate_loss(optimizer, decay, stat_current, stat_previous, op):
@@ -61,6 +63,11 @@ def _adjust_learning_rate(optimizer, decay):
         param_group['lr'] /= decay
 
 
+def _adjust_learning_rate_dann(optimizer, p):
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = args.lr / (1. + 10 * p) ** 0.75
+
+
 def _accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     maxk = max(topk)
@@ -75,6 +82,7 @@ def _accuracy(output, target, topk=(1,)):
         correct_k = correct[:k].contiguous().view(-1).float().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
+
 
 def main():
     global args, writer_train, writer_val, device
@@ -248,7 +256,7 @@ def main():
         elif args.lr_adaptive == 'none' and epoch in args.lr_steps:
             _adjust_learning_rate(optimizer, args.lr_decay)
 
-        loss_c, attn_epoch_source, attn_epoch_target = train(num_class, source_loader, target_loader, model, criterion,
+        loss_c, attn_epoch_source, attn_epoch_target = train(source_loader, target_loader, model, criterion,
                                                              criterion_domain, optimizer,
                                                              epoch, train_file, train_short_file, alpha, beta, gamma,
                                                              mu)
@@ -260,16 +268,15 @@ def main():
         # evaluate on validation set
         if epoch % args.eval_freq == 0 or epoch == args.epochs:
             if target_set.labels_available:
-                prec1_val, prec1_verb_val, prec1_noun_val = validate(target_loader, model, criterion, num_class, epoch,
-                                                                     val_file, writer_val)
+                prec1_verb_val = validate(target_loader, model, criterion, num_class, epoch,
+                                          val_file, writer_val)
                 print(Fore.YELLOW + 'Precision on verb:', prec1_verb_val)
-                print(Fore.YELLOW + 'Precision on noun:', prec1_verb_val)
 
                 prec1 = 0
                 if args.train_metric == "all":
-                    prec1 = prec1_val
+                    raise Exception("Metric to train not yet implemented")
                 elif args.train_metric == "noun":
-                    prec1 = prec1_noun_val
+                    raise Exception("Metric to train not yet implemented")
                 elif args.train_metric == "verb":
                     prec1 = prec1_verb_val
                 else:
@@ -365,9 +372,7 @@ def _print_training_line(params, log):
            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
            'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' + \
            'Prec@1 {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
-           'Prec@1 {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
            'Prec@5 {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
-           'Prec@5 {top5_action.val:.3f} ({top5_action.avg:.3f})\t' + \
            'Loss {loss.val:.4f} ({loss.avg:.4f})   loss_verb {loss_verb.avg:.4f}\t'
     if args.dis_DA != 'none' and args.use_target != 'none':
         line += 'alpha {alpha:.3f}  loss_d {loss_d.avg:.4f}\t'
@@ -379,42 +384,34 @@ def _print_training_line(params, log):
         line += 'mu {mu:.6f}  loss_s {loss_s.avg:.4f}\t'
 
     line = line.format(
-        epoch, i, len(source_loader), batch_time=batch_time, data_time=data_time, alpha=alpha, beta=beta_new,
-        gamma=gamma, mu=mu,
-        loss=losses, loss_verb=losses_c_verb,
-        loss_d=losses_d, loss_a=losses_a,
-        loss_e_verb=losses_e_verb,
-        loss_s=losses_s,
-        top1_verb=top1_verb,
-        top5_verb=top5_verb,
-        top1_action=top1_action,
-        top5_action=top5_action,
-        lr=optimizer.param_groups[0]['lr'])
-    if i % args.show_freq == 0:
+        params["epoch"], params["iteration"], params['len_dataset'], batch_time=params['batch_time'],
+        data_time=params['data_time'], alpha=params['alpha'], beta=params['beta_new'],
+        gamma=params['gamma'], mu=params['mu'],
+        loss=params['losses'], loss_verb=params['losses_c_verb'],
+        loss_d=params['losses_d'], loss_a=params['losses_a'],
+        loss_e_verb=params['losses_e_verb'],
+        loss_s=params['losses_s'],
+        top1_verb=params['top1_verb'],
+        top5_verb=params['top5_verb'],
+        lr=params['lr'])
+    if params["iteration"] % args.show_freq == 0:
         print(line)
     log.write('%s\n' % line)
 
 
-
-def train(num_class, source_loader, target_loader, model, criterion, criterion_domain, optimizer, epoch, train_file,
-          train_short_file, alpha, beta, gamma, mu):
+def train(source_loader, target_loader, model, criterion, criterion_domain, optimizer, epoch, log,
+          log_short, alpha, beta, gamma, mu):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses_a = AverageMeter()  # adversarial loss
     losses_d = AverageMeter()  # discrepancy loss
     losses_e_verb = AverageMeter()
-    losses_e_noun = AverageMeter()
     losses_s = AverageMeter()  # ensemble loss
     losses_c = AverageMeter()
     losses_c_verb = AverageMeter()  # classification loss
-    losses_c_noun = AverageMeter()  # classification loss
     losses = AverageMeter()
     top1_verb = AverageMeter()
     top5_verb = AverageMeter()
-    top1_noun = AverageMeter()
-    top5_noun = AverageMeter()
-    top1_action = AverageMeter()
-    top5_action = AverageMeter()
 
     if args.no_partialbn:
         model.module.partialBN(False)
@@ -444,6 +441,8 @@ def train(num_class, source_loader, target_loader, model, criterion, criterion_d
         label_target_verb_display = None
         label_target_domain_display = None
 
+    attn_epoch_source = torch.Tensor()
+    attn_epoch_target = torch.Tensor()
     for i, ((source_data, source_label, source_id), (target_data, target_label, target_id)) in data_loader:
         if source_data.size(0) != source_label.size(0) or target_data.size(0) != target_label.size(0):
             print('Source - Skipped for different size: {} {}'.format(source_data.size(0), source_label.size(0)))
@@ -536,6 +535,10 @@ def train(num_class, source_loader, target_loader, model, criterion, criterion_d
                                                                                               feat_target,
                                                                                               batch_target_ori)
 
+        # draw the PyTorch execution graphs and traces
+        if args.draw_execution_graphs and i == 0:
+            make_dot(out_source[0].mean(), params=dict(model.named_parameters()))
+
         # store the embedding
         if args.tensorboard:
             feat_source_display_verb = feat_source[1] if i == 0 else torch.cat(
@@ -561,7 +564,7 @@ def train(num_class, source_loader, target_loader, model, criterion, criterion_d
         # === Calculate the loss function ===#
         out_verb = out_source[0].to(device)
         label_verb = label_source_verb.to(device)
-        loss_verb = criterion(out_verb, label_verb)  # TODO: la loss lsta è qui
+        loss_verb = criterion(out_verb, label_verb)
         if args.train_metric == "all":
             loss_classification = 0.5 * loss_verb  # (loss_verb + loss_noun)
         elif args.train_metric == "noun":
@@ -674,7 +677,7 @@ def train(num_class, source_loader, target_loader, model, criterion, criterion_d
                 loss += gamma * loss_entropy_verb
             else:
                 raise Exception("invalid metric to train")
-        # 3. attentive entropy loss
+        # attentive entropy loss
         if args.add_loss_DA == 'attentive_entropy' and args.use_attn != 'none' and args.use_target != 'none':
             loss_entropy_verb = attentive_entropy(torch.cat((out_verb, out_target[0]), 0), pred_domain_all[1])
             losses_e_verb.update(loss_entropy_verb.item(), out_target[0].size(0))
@@ -694,8 +697,7 @@ def train(num_class, source_loader, target_loader, model, criterion, criterion_d
         top1_verb.update(prec1_verb.item(), out_verb.size(0))
         top5_verb.update(prec5_verb.item(), out_verb.size(0))
 
-        # compute gradient and do SGD step
-        #TODO: vedere come inserire lsta
+        # compute gradient and do SGD step (LSTA is already included)
         optimizer.zero_grad()
         loss.backward()
         if args.clip_gradient is not None:
@@ -712,10 +714,152 @@ def train(num_class, source_loader, target_loader, model, criterion, criterion_d
         end = time.time()
 
         if i % args.print_freq == 0:
-            _print_training_line()
+            _print_training_line(
+                {
+                    "epoch": epoch,
+                    "iteration": i,
+                    "len_dataset": len(source_data),
+                    "gamma": gamma,
+                    "mu": mu,
+                    "batch_time": batch_time,
+                    "data_time": data_time,
+                    "alpha": alpha,
+                    "beta_new": beta_new,
+                    "losses": losses,
+                    "losses_c_verb": losses_c_verb,
+                    "losses_d": losses_d,
+                    "losses_a": losses_a,
+                    "losses_e_verb": losses_e_verb,
+                    "losses_s": losses_s,
+                    "top1_verb": top1_verb,
+                    "top5_verb": top5_verb,
+                    "lr": optimizer.param_groups[0]['lr']
+                }, log)
 
-def validate(target_loader, model, criterion, num_class, epoch, val_file, writer_val):
-    pass
+        # adjust the learning rate for ech step (e.g. DANN)
+        if args.lr_adaptive == 'dann':
+            _adjust_learning_rate_dann(optimizer, p)
+
+        # save attention values w/ the selected class
+        if args.save_attention >= 0:
+            attn_source = attn_source[source_label == args.save_attention]
+            attn_target = attn_target[target_label == args.save_attention]
+            attn_epoch_source = torch.cat((attn_epoch_source, attn_source.to(device)))
+            attn_epoch_target = torch.cat((attn_epoch_target, attn_target.to(device)))
+
+    # update the embedding every epoch
+    if args.tensorboard:
+        writer_train.add_scalar("loss/verb", losses_c_verb.avg, epoch)
+        writer_train.add_scalar("acc/verb", top1_verb.avg, epoch)
+        if args.adv_DA != 'none' and args.use_target != 'none':
+            writer_train.add_scalar("loss/domain", loss_adversarial, epoch)
+
+    return losses_c.avg, attn_epoch_source.mean(0), attn_epoch_target.mean(0)
+
+
+def validate(target_loader, model, criterion, num_class, epoch, log, tensor_writer):
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1_verb = AverageMeter()
+    top5_verb = AverageMeter()
+
+    # switch to evaluate mode
+    model.eval()
+    end = time.time()
+
+    # initialize the embedding
+    if args.tensorboard:
+        feat_val_display = None
+        label_val_verb_display = None
+
+    for i, (val_data, val_label, _) in enumerate(target_loader):
+        val_size_ori = val_data.size()  # original shape
+        batch_val_ori = val_size_ori[0]
+
+        # add dummy tensors to keep the same batch size for each epoch (for the last epoch)
+        if batch_val_ori < args.batch_size[2]:
+            if args.use_spatial_features == 'Y':
+                val_data_dummy = torch.zeros(args.batch_size[2] - batch_val_ori, val_size_ori[1], val_size_ori[2],
+                                             val_size_ori[3], val_size_ori[4])
+            else:
+                val_data_dummy = torch.zeros(args.batch_size[2] - batch_val_ori, val_size_ori[1], val_size_ori[2])
+            val_data = torch.cat((val_data, val_data_dummy))
+        # add dummy tensors to make sure batch size can be divided by gpu #
+        if gpu_count != 0 and val_data.size(0) % gpu_count != 0:
+            if args.use_spatial_features == 'Y':
+                val_data_dummy = torch.zeros(gpu_count - val_data.size(0) % gpu_count, val_data.size(1),
+                                             val_data.size(2), val_data.size(3), val_data.size(4))
+            else:
+                val_data_dummy = torch.zeros(gpu_count - val_data.size(0) % gpu_count, val_data.size(1),
+                                             val_data.size(2))
+            val_data = torch.cat((val_data, val_data_dummy))
+
+        val_label_verb = val_label.to(device)
+        with torch.no_grad():
+            if args.baseline_type == 'frame':
+                # expand the size for all the frames
+                val_label_verb_frame = val_label_verb.unsqueeze(1).repeat(1, args.num_segments).view(-1)
+
+            # compute output
+            _, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = model(val_data, val_data,
+                                                                                           [0] * len(args.beta), 0,
+                                                                                           is_train=False,
+                                                                                           reverse=False,
+                                                                                           use_spatial_features=args.use_spatial_features)
+            # ignore dummy tensors
+            attn_val, out_val, out_val_2, pred_domain_val, feat_val = remove_dummy(attn_val, out_val, out_val_2,
+                                                                                   pred_domain_val, feat_val,
+                                                                                   batch_val_ori)
+            # measure accuracy and record loss
+            label_verb = val_label_verb_frame if args.baseline_type == 'frame' else val_label_verb
+            # store the embedding
+            if args.tensorboard:
+                feat_val_display = feat_val[1] if i == 0 else torch.cat((feat_val_display, feat_val[1]), 0)
+                label_val_verb_display = label_verb if i == 0 else torch.cat((label_val_verb_display, label_verb), 0)
+
+            pred_verb = out_val[0]
+            if args.baseline_type == 'tsn':
+                pred_verb = pred_verb.view(val_label.size(0), -1, num_class).mean(
+                    dim=1)  # average all the segments (needed when num_segments != val_segments)
+            loss_verb = criterion(pred_verb, label_verb)
+            if args.train_metric == "all":
+                loss = 0.5 * loss_verb  # * (loss_verb + loss_noun)
+            elif args.train_metric == "noun":
+                raise Exception('noun is temporally unavaiable')
+            elif args.train_metric == "verb":
+                loss = loss_verb  # 0.5*(loss_verb+loss_noun)
+            else:
+                raise Exception("invalid metric to train")
+            prec1_verb, prec5_verb = _accuracy(pred_verb.data, label_verb, topk=(1, 5))
+
+            losses.update(loss.item(), out_val[0].size(0))
+            top1_verb.update(prec1_verb.item(), out_val[0].size(0))
+            top5_verb.update(prec5_verb.item(), out_val[0].size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if i % args.print_freq == 0:
+                line = 'Test: [{0}][{1}/{2}]\t' + \
+                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
+                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t' + \
+                       'Prec@1 verb {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
+                       'Prec@5 verb {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t'
+
+                line = line.format(
+                    epoch, i, len(target_loader), batch_time=batch_time, loss=losses,
+                    top1_verb=top1_verb, top5_verb=top5_verb)
+                if i % args.show_freq == 0:
+                    print(line)
+                log.write('%s\n' % line)
+
+    if args.tensorboard:  # update the embedding every iteration
+        tensor_writer.add_scalar("acc/verb", top1_verb.avg, epoch)
+        if epoch == 20:
+            tensor_writer.add_embedding(feat_val_display, metadata=label_val_verb_display.data, global_step=epoch,
+                                        tag='validation')
+    return top1_verb.avg
 
 
 if __name__ == "__main__":
