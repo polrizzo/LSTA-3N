@@ -12,6 +12,7 @@ FRAME_AGGREGATION = "trn-m"
 CURRENT_MODALITY = "RGB"
 USE_TARGET = "uSv"
 CURRENT_ARCH = "TSM"
+TRAIN_METRIC = "verb"
 
 TRAIN_SOURCE_LIST = LABELS_PATH + CURRENT_DOMAIN + "_train.pkl"
 TRAIN_SOURCE_DATA = FEATURES_PATH + CURRENT_DOMAIN + "-" + CURRENT_DOMAIN + "_train_" + CURRENT_MODALITY + "_" + CURRENT_ARCH + "__spatial" + ".hkl"
@@ -71,7 +72,7 @@ parser.add_argument('--use_spatial_features', type=str, default=USE_SPATIAL_FEAT
 
 # ========================= Model Configs ==========================
 parser.add_argument('--use_lsta', default=USE_LSTA, type=str)
-parser.add_argument('--train_metric', default="verb", type=str)
+parser.add_argument('--train_metric', default=TRAIN_METRIC, type=str)
 parser.add_argument('--dann_warmup', default=False, action="store_true")
 parser.add_argument('--arch', type=str, default=CURRENT_ARCH.upper(), choices=["TBN", "I3D", "TSM"])
 parser.add_argument('--pretrained', type=str, default="none")
@@ -86,15 +87,14 @@ parser.add_argument('--frame_aggregation', type=str, default=FRAME_AGGREGATION,
                     choices=['avgpool', 'rnn', 'temconv', 'trn', 'trn-m', 'none'],
                     help='aggregation of frame features (none if baseline_type is not video)')
 parser.add_argument('--optimizer', type=str, default=OPTIMIZ, choices=['SGD', 'Adam'])
-parser.add_argument('--use_opencv', default=False, action="store_true",
-                    help='whether to use the opencv transformation')
+parser.add_argument('--use_opencv', default=False, action="store_true", help='whether to use the opencv transformation')
 parser.add_argument('--dropout_i', '--doi', default=0.5, type=float,
                     metavar='DOI', help='dropout ratio for frame-level feature (default: 0.5)')
 parser.add_argument('--dropout_v', '--dov', default=DROP, type=float,
                     metavar='DOV', help='dropout ratio for video-level feature (default: 0.5)')
-parser.add_argument('--loss_type', type=str, default="nll",
-                    choices=['nll'])
+parser.add_argument('--loss_type', type=str, default="nll", choices=['nll'])
 parser.add_argument('--weighted_class_loss', type=str, default='N', choices=['Y', 'N'])
+parser.add_argument('--draw_execution_graphs', default=False, choices=[True, False])
 
 # ========================= RNN ==========================
 parser.add_argument('--n_rnn', default=1, type=int, metavar='M',
@@ -103,7 +103,7 @@ parser.add_argument('--rnn_cell', type=str, default='LSTM', choices=['LSTM', 'GR
 parser.add_argument('--n_directions', type=int, default=1, choices=[1, 2],
                     help='(bi-) direction RNN')
 parser.add_argument('--n_ts', type=int, default=5, help='number of temporal segments')
-
+# LSTA
 parser.add_argument('--outPool_size', type=int, default=100, help='size of output pooling for LSTA')
 parser.add_argument('--mem_size', type=int, default=2048, help='size of the LSTA cell')
 

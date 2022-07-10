@@ -6,3 +6,4 @@ hickle
 pandas
 matplotlib
 tensorboardX
+torchviz
