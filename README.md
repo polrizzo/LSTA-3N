@@ -1,4 +1,4 @@
-# LSTA-3N
+# LSTA<sup>3</sup>N for action recognition
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -45,6 +45,7 @@ The ideas behind the project are inspired by the following papers and the corres
 2. Python 3.6+ version is needed
 3. Good NVIDIA GPU (4GB+) is strongly suggested but it's not mandatory
 4. RAM size depends on the dimension of the spatial feature tensors. In the tested configuration, not less than 32GB were required.
+5. If you wish to see the exectuion graph through TorchViz library, you've to manually install the "graphviz" library on your system and then set the `draw_execution_graphs` as true.
 
 ### Enviroment
 Once the repo is cloned, some python libraries are required to properly setup your (virtual) enviroment.
@@ -65,7 +66,7 @@ EPIC KITCHENS dataset can be found [here](https://epic-kitchens.github.io/2022).
 
 Though it is possible to download every single video, this project's scripts are based on pre-extracted spatial features. Features' shape should be `[Batch, N°Channels, N°Frames, Width, Height]`. In our case, the features were extracted from the last convolutional layer block of a TSM applied to RGB frames. Therefore, `batch_size = 2048` and `n_channel = 3` .
 
-Three different domains have been selected to perform domain shift: `P01, P22 and P08`, respectively known in this project as `D1, D2 and D3`.
+Three different domains have been selected to perform domain shift: `P08, P01 and P22`, respectively known in this project as `D1, D2 and D3`.
 
 --------------------------------------------------------------
 
