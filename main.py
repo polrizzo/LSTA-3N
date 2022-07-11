@@ -259,10 +259,17 @@ def main():
         elif args.lr_adaptive == 'none' and epoch in args.lr_steps:
             _adjust_learning_rate(optimizer, args.lr_decay)
 
-        loss_c, attn_epoch_source, attn_epoch_target = train(source_loader, target_loader, model, criterion,
+        loss_c, attn_epoch_source, attn_epoch_target, out_mean = train(source_loader, target_loader, model, criterion,
                                                              criterion_domain, optimizer,
                                                              epoch, train_file, train_short_file, alpha, beta, gamma,
                                                              mu)
+
+        # draw the PyTorch execution graphs and traces
+        if args.draw_execution_graphs and epoch == 1:
+            print(Fore.CYAN + 'Drawing execution graphs and traces')
+            make_dot(out_mean, params=dict(model.named_parameters())).render("attached", format="png")
+            #digraph = make_dot(out_mean, params=dict(model.named_parameters()))
+            #digraph.render(filename=path_exp + "test.dot")
 
         if args.save_attention >= 0:
             attn_source_all = torch.cat((attn_source_all, attn_epoch_source.unsqueeze(0)))  # save the attention values
@@ -457,6 +464,7 @@ def train(source_loader, target_loader, model, criterion, criterion_domain, opti
 
     attn_epoch_source = torch.Tensor()
     attn_epoch_target = torch.Tensor()
+    out_verb = torch.Tensor()
     for i, ((source_data, source_label, source_id), (target_data, target_label, target_id)) in data_loader:
         if source_data.size(0) != source_label.size(0) or target_data.size(0) != target_label.size(0):
             print('Source - Skipped for different size: {} {}'.format(source_data.size(0), source_label.size(0)))
@@ -548,10 +556,6 @@ def train(source_loader, target_loader, model, criterion, criterion_domain, opti
                                                                                               pred_domain_target,
                                                                                               feat_target,
                                                                                               batch_target_ori)
-
-        # draw the PyTorch execution graphs and traces
-        if args.draw_execution_graphs and i == 0:
-            make_dot(out_source[0].mean(), params=dict(model.named_parameters()))
 
         # store the embedding
         if args.tensorboard:
@@ -768,7 +772,7 @@ def train(source_loader, target_loader, model, criterion, criterion_domain, opti
         if args.adv_DA != 'none' and args.use_target != 'none':
             writer_train.add_scalar("loss/domain", loss_adversarial, epoch)
 
-    return losses_c.avg, attn_epoch_source.mean(0), attn_epoch_target.mean(0)
+    return losses_c.avg, attn_epoch_source.mean(0), attn_epoch_target.mean(0), out_verb.mean()
 
 
 def validate(target_loader, model, criterion, num_class, epoch, log, tensor_writer):
