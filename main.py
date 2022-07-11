@@ -242,8 +242,11 @@ def main():
     gamma = args.gamma
     mu = args.mu
 
+    attn_source_all = torch.Tensor()
+    attn_target_all = torch.Tensor()
+
     if args.use_lsta == 'Y':
-        _initialize_lsta(args, model)
+        _initialize_lsta(model)
 
     for epoch in range(start_epoch, args.epochs + 1):
         print(Fore.GREEN + '-Epoch', '{}'.format(epoch))
@@ -260,6 +263,10 @@ def main():
                                                              criterion_domain, optimizer,
                                                              epoch, train_file, train_short_file, alpha, beta, gamma,
                                                              mu)
+
+        if args.save_attention >= 0:
+            attn_source_all = torch.cat((attn_source_all, attn_epoch_source.unsqueeze(0)))  # save the attention values
+            attn_target_all = torch.cat((attn_target_all, attn_epoch_target.unsqueeze(0)))  # save the attention values
 
         # update the recorded loss_c
         loss_c_previous = loss_c_current
@@ -331,12 +338,19 @@ def main():
         writer_train.close()
         writer_val.close()
 
+    if args.save_attention >= 0:
+        np.savetxt('attn_source_' + str(args.save_attention) + '.log', attn_source_all.to(device).
+                    detach().numpy(), fmt="%s")
+        np.savetxt('attn_target_' + str(args.save_attention) + '.log', attn_target_all.to(device).
+                    detach().numpy(), fmt="%s")
+
 
 def _use_pretrained_source_data(source_data, target_data, model, criterion, optimizer, mu, beta, batch_source,
                                 label_source_verb):
     # forward pass data again
-    _, out_source, out_source_2, _, _, _, _, _, _, _ = model(source_data, target_data, beta, mu, is_train=True,
-                                                             reverse=False)
+    _, out_source, out_source_2, _, _, _, _, _, _, _ = model(device, source_data, target_data, beta, mu, is_train=True,
+                                                             reverse=False,
+                                                             use_spatial_features=args.use_spatial_features)
     # ignore dummy tensors
     out_source_verb = out_source[0][:batch_source]
     out_source_noun = out_source[1][:batch_source]
@@ -521,7 +535,7 @@ def train(source_loader, target_loader, model, criterion, criterion_domain, opti
 
         # === Forward pass data ===#
         attn_source, out_source, out_source_2, pred_domain_source, feat_source, attn_target, out_target, out_target_2, pred_domain_target, feat_target = model(
-            source_data.to(device), target_data.to(device), beta_new, mu, is_train=True,
+            device, source_data.to(device), target_data.to(device), beta_new, mu, is_train=True,
             reverse=False, use_spatial_features=args.use_spatial_features)
         # ignore dummy tensors
         attn_source, out_source, out_source_2, pred_domain_source, feat_source = remove_dummy(attn_source, out_source,
@@ -801,7 +815,7 @@ def validate(target_loader, model, criterion, num_class, epoch, log, tensor_writ
                 val_label_verb_frame = val_label_verb.unsqueeze(1).repeat(1, args.num_segments).view(-1)
 
             # compute output
-            _, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = model(val_data, val_data,
+            _, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = model(device, val_data, val_data,
                                                                                            [0] * len(args.beta), 0,
                                                                                            is_train=False,
                                                                                            reverse=False,
