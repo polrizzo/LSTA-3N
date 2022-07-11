@@ -1,3 +1,5 @@
+from random import randint
+
 import torch.utils.data as data
 import pickle
 import torch
@@ -150,9 +152,7 @@ class TSNDataSet(data.Dataset):
 
         # process_data = self.transform(frames)
         process_data_verb = torch.stack(frames)
-
         frames = list()
-
         if self.noun_data is not None:
             for seg_ind in indices:
                 p = int(seg_ind)
@@ -162,7 +162,6 @@ class TSNDataSet(data.Dataset):
 
                     if p < record.num_frames:
                         p += 1
-
             # process_data = self.transform(frames)
             process_data_noun = torch.stack(frames)
             process_data = [process_data_verb, process_data_noun]
