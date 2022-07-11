@@ -7,16 +7,16 @@ EXPERIMENTS_PATH = "/Users/lorenzo/University/Polito/ML and DL/LSTA-3N" + "/"
 ###############################
 
 CURRENT_DOMAIN = "D1"
-TARGET_DOMAIN = "D3"
+TARGET_DOMAIN = "D1"
 FRAME_AGGREGATION = "trn-m"
 CURRENT_MODALITY = "RGB"
-USE_TARGET = "uSv"
+USE_TARGET = "none"
 CURRENT_ARCH = "TSM"
 TRAIN_METRIC = "verb"
 
 TRAIN_SOURCE_LIST = LABELS_PATH + CURRENT_DOMAIN + "_train.pkl"
 TRAIN_SOURCE_DATA = FEATURES_PATH + CURRENT_DOMAIN + "-" + CURRENT_DOMAIN + "_train_" + CURRENT_MODALITY + "_" + CURRENT_ARCH + "__spatial" + ".hkl"
-TRAIN_TARGET_LIST = LABELS_PATH + TARGET_DOMAIN + "_train.pkl"
+TRAIN_TARGET_LIST = LABELS_PATH + TARGET_DOMAIN + "_test.pkl"
 TRAIN_TARGET_DATA = FEATURES_PATH + TARGET_DOMAIN + "-" + TARGET_DOMAIN + "_test_" + CURRENT_MODALITY + "_" + CURRENT_ARCH + "__spatial" + ".hkl"
 
 N_EPOCH = 3
@@ -31,7 +31,7 @@ LRN_DECAY_WEIGHT = 1e-4
 BETA = [0.75, 0.75, 0.5]
 GAMMA = 0.03
 
-WORKERS = 4
+WORKERS = 0
 RESUME_FROM_LAST_CHECKPOINT = False
 TENSORBOARD = True
 USE_SPATIAL_FEATURES = 'Y'
@@ -197,4 +197,5 @@ parser.add_argument('--exp_path', type=str, default=EXPERIMENTS_PATH + "LSTA_TA3
 parser.add_argument('--gpus', nargs='+', type=int, default=None)
 parser.add_argument('--flow_prefix', default="", type=str)
 parser.add_argument('--save_model', default=False, action="store_true")
+parser.add_argument('--save_attention', type=int, default=-1)
 parser.add_argument('--tensorboard', default=TENSORBOARD, dest='tensorboard', action='store_true')
