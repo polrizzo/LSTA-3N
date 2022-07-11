@@ -305,6 +305,217 @@ class VideoModel(nn.Module):
             self.lsta_model = attention_model(num_classes=num_class[0], mem_size=self.mem_size,
                                               c_cam_classes=self.outpool_size, is_with_ta3n=self.use_lsta)
 
+    def partialBN(self, enable):
+        self._enable_pbn = enable
+
+    def get_trans_attn(self, pred_domain):
+        softmax = nn.Softmax(dim=1)
+        logsoftmax = nn.LogSoftmax(dim=1)
+        entropy = torch.sum(-softmax(pred_domain) * logsoftmax(pred_domain), 1)
+        weights = 1 - entropy
+        return weights
+
+    def get_general_attn(self, feat):
+        num_segments = feat.size()[1]
+        feat = feat.view(-1, feat.size()[-1])  # reshape features: 128x4x256 --> (128x4)x256
+        weights = self.attn_layer(feat)  # e.g. (128x4)x1
+        weights = weights.view(-1, num_segments, weights.size()[-1])  # reshape attention weights: (128x4)x1 --> 128x4x1
+        weights = F.softmax(weights, dim=1)  # softmax over segments ==> 128x4x1
+        return weights
+
+    def get_attn_feat_frame(self, feat_fc, pred_domain):  # not used for now
+        weights_attn = None
+        if self.use_attn == 'TransAttn':
+            weights_attn = self.get_trans_attn(pred_domain)
+        elif self.use_attn == 'general':
+            weights_attn = self.get_general_attn(feat_fc)
+        weights_attn = weights_attn.view(-1, 1).repeat(1,feat_fc.size()[-1])  # reshape & repeat weights (e.g. 16 x 512)
+        feat_fc_attn = (weights_attn + 1) * feat_fc
+        return feat_fc_attn
+
+    def get_attn_feat_relation(self, feat_fc, pred_domain, num_segments):
+        weights_attn = None
+        if self.use_attn == 'TransAttn':
+            weights_attn = self.get_trans_attn(pred_domain)
+        elif self.use_attn == 'general':
+            weights_attn = self.get_general_attn(feat_fc)
+        weights_attn = weights_attn.view(-1, num_segments - 1, 1).repeat(1, 1, feat_fc.size()[-1])  # reshape & repeat weights (e.g. 16 x 4 x 256)
+        feat_fc_attn = (weights_attn + 1) * feat_fc
+        return feat_fc_attn, weights_attn[:, :, 0]
+
+    def aggregate_frames(self, feat_fc, num_segments, pred_domain, device):
+        feat_fc_video = None
+        if self.frame_aggregation == 'rnn':
+            # 2. RNN
+            feat_fc_video = feat_fc.view((-1, num_segments) + feat_fc.size()[-1:])  # reshape for RNN
+            # temporal segments and pooling
+            len_ts = round(num_segments / self.n_ts)
+            num_extra_f = len_ts * self.n_ts - num_segments
+            if num_extra_f < 0:  # can remove last frame-level features
+                feat_fc_video = feat_fc_video[:, :len_ts * self.n_ts,
+                                :]  # make the temporal length can be divided by n_ts (16 x 25 x 512 --> 16 x 24 x 512)
+            elif num_extra_f > 0:  # need to repeat last frame-level features
+                feat_fc_video = torch.cat((feat_fc_video, feat_fc_video[:, -1:, :].repeat(1, num_extra_f, 1)),
+                                          1)  # make the temporal length can be divided by n_ts (16 x 5 x 512 --> 16 x 6 x 512)
+            feat_fc_video = feat_fc_video.view(
+                (-1, self.n_ts, len_ts) + feat_fc_video.size()[2:])  # 16 x 6 x 512 --> 16 x 3 x 2 x 512
+            feat_fc_video = nn.MaxPool2d(kernel_size=(len_ts, 1))(
+                feat_fc_video)  # 16 x 3 x 2 x 512 --> 16 x 3 x 1 x 512
+            feat_fc_video = feat_fc_video.squeeze(2)  # 16 x 3 x 1 x 512 --> 16 x 3 x 512
+            hidden_temp = torch.zeros(self.n_layers * self.n_directions, feat_fc_video.size(0),
+                                      self.hidden_dim // self.n_directions, device=device)
+            if self.rnn_cell == 'LSTM':
+                hidden_init = (hidden_temp, hidden_temp)
+            elif self.rnn_cell == 'GRU':
+                hidden_init = hidden_temp
+
+            self.rnn.flatten_parameters()
+            feat_fc_video, hidden_final = self.rnn(feat_fc_video, hidden_init)  # e.g. 16 x 25 x 512
+            # get the last feature vector
+            feat_fc_video = feat_fc_video[:, -1, :]
+        else:
+            # 1. averaging
+            feat_fc_video = feat_fc.view(
+                (-1, 1, num_segments) + feat_fc.size()[-1:])  # reshape based on the segments (e.g. 16 x 1 x 5 x 512)
+            if self.use_attn == 'TransAttn':  # get the attention weighting
+                weights_attn = self.get_trans_attn(pred_domain)
+                weights_attn = weights_attn.view(-1, 1, num_segments, 1).repeat(1, 1, 1, feat_fc.size()[
+                    -1])  # reshape & repeat weights (e.g. 16 x 1 x 5 x 512)
+                feat_fc_video = (weights_attn + 1) * feat_fc_video
+            feat_fc_video = nn.AvgPool2d([num_segments, 1])(feat_fc_video)  # e.g. 16 x 1 x 1 x 512
+            feat_fc_video = feat_fc_video.squeeze(1).squeeze(1)  # e.g. 16 x 512
+        return feat_fc_video
+
+    def final_output(self, pred, pred_video, num_segments):
+        if self.baseline_type == 'video':
+            base_out = pred_video
+        else:
+            base_out = pred
+
+        if not self.before_softmax:
+            base_out = (self.softmax(base_out[0]), self.softmax(base_out[1]))
+        output = base_out
+
+        if self.baseline_type == 'tsn':
+            if self.reshape:
+                base_out = (base_out[0].view((-1, num_segments) + base_out[0].size()[1:]),
+                            base_out[1].view(
+                                (-1, num_segments) + base_out[1].size()[1:]))  # e.g. 16 x 3 x 12 (3 segments)
+            output = (base_out[0].mean(1), base_out[1].mean(1))  # e.g. 16 x 12
+
+        return output
+
+    def domain_classifier_frame(self, feat, beta):
+        feat_fc_domain_frame = GradReverse.apply(feat, beta[2])
+        feat_fc_domain_frame = self.fc_feature_domain(feat_fc_domain_frame)
+        feat_fc_domain_frame = self.relu(feat_fc_domain_frame)
+        pred_fc_domain_frame = self.fc_classifier_domain(feat_fc_domain_frame)
+        return pred_fc_domain_frame
+
+    def domain_classifier_video(self, feat_video, beta):
+        feat_fc_domain_video = GradReverse.apply(feat_video, beta[1])
+        feat_fc_domain_video = self.fc_feature_domain_video(feat_fc_domain_video)
+        feat_fc_domain_video = self.relu(feat_fc_domain_video)
+        pred_fc_domain_video = self.fc_classifier_domain_video(feat_fc_domain_video)
+        return pred_fc_domain_video
+
+    def domain_classifier_relation(self, feat_relation, beta):
+        # 128x4x256 --> (128x4)x2
+        pred_fc_domain_relation_video = None
+        for i in range(len(self.relation_domain_classifier_all)):
+            feat_relation_single = feat_relation[:, i, :].squeeze(1)  # 128x1x256 --> 128x256
+            feat_fc_domain_relation_single = GradReverse.apply(feat_relation_single,
+                                                               beta[0])  # the same beta for all relations (for now)
+            pred_fc_domain_relation_single = self.relation_domain_classifier_all[i](feat_fc_domain_relation_single)
+
+            if pred_fc_domain_relation_video is None:
+                pred_fc_domain_relation_video = pred_fc_domain_relation_single.view(-1, 1, 2)
+            else:
+                pred_fc_domain_relation_video = torch.cat(
+                    (pred_fc_domain_relation_video, pred_fc_domain_relation_single.view(-1, 1, 2)), 1)
+
+        pred_fc_domain_relation_video = pred_fc_domain_relation_video.view(-1, 2)
+        return pred_fc_domain_relation_video
+
+    def domain_align(self, input_S, input_T, is_train, name_layer, alpha, num_segments, dim):
+        input_S = input_S.view((-1, dim, num_segments) + input_S.size()[
+                                                         -1:])  # reshape based on the segments (e.g. 80 x 512 --> 16 x 1 x 5 x 512)
+        input_T = input_T.view((-1, dim, num_segments) + input_T.size()[-1:])  # reshape based on the segments
+
+        # clamp alpha
+        alpha = max(alpha, 0.5)
+
+        # rearange source and target data
+        num_S_1 = int(round(input_S.size(0) * alpha))
+        num_S_2 = input_S.size(0) - num_S_1
+        num_T_1 = int(round(input_T.size(0) * alpha))
+        num_T_2 = input_T.size(0) - num_T_1
+
+        if is_train and num_S_2 > 0 and num_T_2 > 0:
+            input_source = torch.cat((input_S[:num_S_1], input_T[-num_T_2:]), 0)
+            input_target = torch.cat((input_T[:num_T_1], input_S[-num_S_2:]), 0)
+        else:
+            input_source = input_S
+            input_target = input_T
+
+        # adaptive BN
+        input_source = input_source.view(
+            (-1,) + input_source.size()[-1:])  # reshape to feed BN (e.g. 16 x 1 x 5 x 512 --> 80 x 512)
+        input_target = input_target.view((-1,) + input_target.size()[-1:])
+
+        if name_layer == 'shared':
+            input_source_bn = self.bn_shared_S(input_source)
+            input_target_bn = self.bn_shared_T(input_target)
+        elif 'trn' in name_layer:
+            input_source_bn = self.bn_trn_S(input_source)
+            input_target_bn = self.bn_trn_T(input_target)
+        elif name_layer == 'temconv_1':
+            input_source_bn = self.bn_1_S(input_source)
+            input_target_bn = self.bn_1_T(input_target)
+        elif name_layer == 'temconv_2':
+            input_source_bn = self.bn_2_S(input_source)
+            input_target_bn = self.bn_2_T(input_target)
+
+        input_source_bn = input_source_bn.view(
+            (-1, dim, num_segments) + input_source_bn.size()[-1:])  # reshape back (e.g. 80 x 512 --> 16 x 1 x 5 x 512)
+        input_target_bn = input_target_bn.view((-1, dim, num_segments) + input_target_bn.size()[-1:])  #
+
+        # rearange back to the original order of source and target data (since target may be unlabeled)
+        if is_train and num_S_2 > 0 and num_T_2 > 0:
+            input_source_bn = torch.cat((input_source_bn[:num_S_1], input_target_bn[-num_S_2:]), 0)
+            input_target_bn = torch.cat((input_target_bn[:num_T_1], input_source_bn[-num_T_2:]), 0)
+
+        # reshape for frame-level features
+        if name_layer == 'shared' or name_layer == 'trn_sum':
+            input_source_bn = input_source_bn.view(
+                (-1,) + input_source_bn.size()[-1:])  # (e.g. 16 x 1 x 5 x 512 --> 80 x 512)
+            input_target_bn = input_target_bn.view((-1,) + input_target_bn.size()[-1:])
+        elif name_layer == 'trn':
+            input_source_bn = input_source_bn.view(
+                (-1, num_segments) + input_source_bn.size()[-1:])  # (e.g. 16 x 1 x 5 x 512 --> 80 x 512)
+            input_target_bn = input_target_bn.view((-1, num_segments) + input_target_bn.size()[-1:])
+
+        return input_source_bn, input_target_bn
+
+    def train(self, mode=True):
+        """
+            Override the default train() to freeze the BN parameters
+        """
+        if self.use_lsta:
+            self.lsta_model.classifier.train(mode)
+        super(VideoModel, self).train(mode)
+        count = 0
+        if self._enable_pbn:
+            print("Freezing BatchNorm2D except the first one.")
+            for m in self.base_model.modules():
+                if isinstance(m, nn.BatchNorm2d):
+                    count += 1
+                    if count >= (2 if self._enable_pbn else 1):
+                        m.eval()
+                        # shutdown update in frozen mode
+                        m.weight.requires_grad = False
+                        m.bias.requires_grad = False
+
     def forward(self, device, input_source, input_target, beta, mu, is_train, reverse, use_spatial_features=False):
         input_source = input_source.to(device)
         input_target = input_target.to(device)
@@ -329,7 +540,7 @@ class VideoModel(nn.Module):
             for t in range(input_source.size(0)):
                 source_reshaped = input_source[t, :, :, :, :]
                 state_inp_stack.append(nn.AvgPool2d(7)(source_reshaped).view(source_reshaped.size(0), -1))
-            source_data = torch.stack(state_inp_stack, dim=1)
+            input_source = torch.stack(state_inp_stack, dim=1)
             # Target
             input_target = input_target.permute(1, 0, 2, 3, 4)
             target_stack = []
@@ -361,8 +572,8 @@ class VideoModel(nn.Module):
 
         # adaptive BN
         if self.use_bn != 'none':
-            feat_fc_source, feat_fc_target = self.domainAlign(feat_fc_source, feat_fc_target, is_train, 'shared',
-                                                              self.alpha.item(), num_segments, 1)
+            feat_fc_source, feat_fc_target = self.domain_align(feat_fc_source, feat_fc_target, is_train, 'shared',
+                                                               self.alpha.item(), num_segments, 1)
 
         feat_fc_source = self.relu(feat_fc_source)
         feat_fc_target = self.relu(feat_fc_target)
@@ -437,8 +648,8 @@ class VideoModel(nn.Module):
         pred_fc_domain_video_relation_source = None
         pred_fc_domain_video_relation_target = None
         if self.frame_aggregation == 'avgpool' or self.frame_aggregation == 'rnn':
-            feat_fc_video_source = self.aggregate_frames(feat_fc_source, num_segments, pred_fc_domain_frame_source)
-            feat_fc_video_target = self.aggregate_frames(feat_fc_target, num_segments, pred_fc_domain_frame_target)
+            feat_fc_video_source = self.aggregate_frames(feat_fc_source, num_segments, pred_fc_domain_frame_source, device)
+            feat_fc_video_target = self.aggregate_frames(feat_fc_target, num_segments, pred_fc_domain_frame_target, device)
 
             attn_relation_source = feat_fc_video_source[:,
                                    0]  # assign random tensors to attention values to avoid runtime error
@@ -488,11 +699,11 @@ class VideoModel(nn.Module):
             feat_fc_video_target_3_1 = self.tcl_3_1(feat_fc_video_target)
 
             if self.use_bn != 'none':
-                feat_fc_video_source_3_1, feat_fc_video_target_3_1 = self.domainAlign(feat_fc_video_source_3_1,
-                                                                                      feat_fc_video_target_3_1,
-                                                                                      is_train,
+                feat_fc_video_source_3_1, feat_fc_video_target_3_1 = self.domain_align(feat_fc_video_source_3_1,
+                                                                                       feat_fc_video_target_3_1,
+                                                                                       is_train,
                                                                                       'temconv_1', self.alpha.item(),
-                                                                                      num_segments, 1)
+                                                                                       num_segments, 1)
 
             feat_fc_video_source = self.relu(feat_fc_video_source_3_1)  # 16 x 1 x 5 x 512
             feat_fc_video_target = self.relu(feat_fc_video_target_3_1)  # 16 x 1 x 5 x 512
