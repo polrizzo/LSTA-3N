@@ -97,7 +97,6 @@ def main():
     best_prec1 = 0
     cudnn.benchmark = True
 
-    # check the experiments folder existence
     num_class_str = args.num_class.split(",")
     if len(num_class_str) < 1:
         raise Exception("Must specify a number of classes to train")
@@ -106,6 +105,7 @@ def main():
         for num in num_class_str:
             num_class.append(int(num))
 
+    # check the experiments folder existence
     path_exp = args.exp_path + args.modality + '/'
     if not os.path.isdir(path_exp):
         os.makedirs(path_exp)
@@ -267,9 +267,7 @@ def main():
         # draw the PyTorch execution graphs and traces
         if args.draw_execution_graphs and epoch == 1:
             print(Fore.CYAN + 'Drawing execution graphs and traces')
-            make_dot(out_mean, params=dict(model.named_parameters())).render("attached", format="png")
-            #digraph = make_dot(out_mean, params=dict(model.named_parameters()))
-            #digraph.render(filename=path_exp + "test.dot")
+            make_dot(out_mean, params=dict(model.named_parameters())).render(path_exp + "execution_graph", format="png")
 
         if args.save_attention >= 0:
             attn_source_all = torch.cat((attn_source_all, attn_epoch_source.unsqueeze(0)))  # save the attention values
@@ -283,7 +281,7 @@ def main():
         if epoch % args.eval_freq == 0 or epoch == args.epochs:
             if target_set.labels_available:
                 prec1_verb_val = validate(target_loader, model, criterion, num_class, epoch,
-                                          val_file, writer_val)
+                                          log=val_file, tensor_writer=writer_val)
                 print(Fore.YELLOW + 'Precision on verb:', prec1_verb_val)
 
                 prec1 = 0
@@ -775,7 +773,7 @@ def train(source_loader, target_loader, model, criterion, criterion_domain, opti
     return losses_c.avg, attn_epoch_source.mean(0), attn_epoch_target.mean(0), out_verb.mean()
 
 
-def validate(target_loader, model, criterion, num_class, epoch, log, tensor_writer):
+def validate(target_loader, model, criterion, num_class, epoch, log=None, tensor_writer=None):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1_verb = AverageMeter()
@@ -870,9 +868,10 @@ def validate(target_loader, model, criterion, num_class, epoch, log, tensor_writ
                     top1_verb=top1_verb, top5_verb=top5_verb)
                 if i % args.show_freq == 0:
                     print(line)
-                log.write('%s\n' % line)
+                if log is not None:
+                    log.write('%s\n' % line)
 
-    if args.tensorboard:  # update the embedding every iteration
+    if args.tensorboard and tensor_writer is not None:  # update the embedding every iteration
         tensor_writer.add_scalar("acc/verb", top1_verb.avg, epoch)
         if epoch == 20:
             tensor_writer.add_embedding(feat_val_display, metadata=label_val_verb_display.data, global_step=epoch,
