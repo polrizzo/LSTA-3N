@@ -1,4 +1,4 @@
-# LSTA<sup>3</sup>N for action recognition
+# LSTA<sup>3</sup>N for Egocentric Action Recognition
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
