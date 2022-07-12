@@ -45,7 +45,7 @@ The ideas behind the project are inspired by the following papers and the corres
 2. Python 3.6+ version is needed
 3. Good NVIDIA GPU (4GB+) is strongly suggested but it's not mandatory
 4. RAM size depends on the dimension of the spatial feature tensors. In the tested configuration, not less than 32GB were required.
-5. If you wish to see the exectuion graph through TorchViz library, you've to manually install the "graphviz" library on your system and then set the `draw_execution_graphs` as true.
+5. If you wish to see the execution graph through TorchViz library, you have to manually install the "graphviz" library on your system and then set the `draw_execution_graphs` as true.
 
 ### Enviroment
 Once the repo is cloned, some python libraries are required to properly setup your (virtual) enviroment.
