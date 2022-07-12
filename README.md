@@ -58,7 +58,7 @@ They can be installed via pip:
 
 or via conda:
 ```bash
-    conda env create -f environment.yml
+    conda create --name <env_name> --file requirements.txt
 ```
 
 ### Dataset and Features
