@@ -92,7 +92,7 @@ Three different domains have been selected to perform domain shift: `P08, P01 an
 * *gamma* : weight for the attentive entropy loss
 
 ### Train & Test
-Before running `main.py` you need to choose NVIDIA GPU or CPU as processing unit. Just check in the project where the extension `.cuda()` is and eventually change to `.cpu()`. Therefore, in command line:
+Before running `main.py` you need to choose NVIDIA GPU or CPU as processing unit. The device used to run this project is dynamically selected between `.cuda()` (which is the prefered option) or `.cpu()` (which is selected if and only if the first one is not avaiable). Therefore, in command line:
 
 ```bash
     python main.py
