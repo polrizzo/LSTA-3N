@@ -77,7 +77,6 @@ Three different domains have been selected to perform domain shift: `P08, P01 an
     * `LSTA/` : LSTA folder with built-in attention module and convolutional cell's structure
     * `TRN_module.py` : frame-aggregation module
     * `module.py` : configures all parameters and creates the main object that will be run in `main.py`
-* `scripts/` : scripts to both train and test our architecture
 * `utils/`
     * `loss.py` : different types of loss function
     * `options.py` : configuration list of parameters to build VideoModel
@@ -99,16 +98,6 @@ Before running `main.py` you need to choose NVIDIA GPU or CPU as processing unit
     python main.py
 ```
 and it will perform both train and test.
-
-For only-train-run:
-```sh
-    sh scripts/train.sh
-```
-
-For only-test-run:
-```sh
-    sh scripts/test.sh
-```
 
 --------------------------------------------------------------
 
